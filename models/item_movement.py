@@ -21,6 +21,12 @@ class ItemMovement(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     timestamp = Column(DateTime, default=datetime.utcnow)
 
+    # Optional fields for purchase and sale prices
+    purchase_price = Column(Integer, nullable=True) 
+    sale_price = Column(Integer, nullable=True)
+
+    item_movement_group_id = Column(Integer, nullable=True)
+
     item = relationship("Item")
     source_warehouse = relationship("Warehouse", foreign_keys=[source_warehouse_id])
     target_warehouse = relationship("Warehouse", foreign_keys=[target_warehouse_id])
