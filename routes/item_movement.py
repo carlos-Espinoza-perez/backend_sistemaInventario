@@ -18,6 +18,7 @@ def get_db():
     finally:
         db.close()
 
+
 @router.post("/", response_model=ItemMovementOut)
 def create_movement(movement: ItemMovementCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     db_movement = ItemMovement(**movement.dict())
@@ -52,11 +53,6 @@ def create_movements_bulk(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error procesando movimientos: {str(e)}")
-
-
-# @router.get("/{item_movement_group_id}", response_model=list[ItemMovementOut])
-# def get_movements(item_movement_group_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-#     return db.query(ItemMovement).filter(ItemMovement.item_movement_group_id == item_movement_group_id).all()
 
 @router.get("/{item_movement_group_id}", response_model=list[ItemMovementOut])
 def get_movements(

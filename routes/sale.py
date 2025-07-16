@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -105,8 +106,8 @@ def get_sales(
             sale_price=sale.sale_price,
             paid=sale.paid,
             note=sale.note,
-            sold_at=sale.sold_at,
-            created_at=sale.created_at,
+            sold_at=datetime.now(),
+            created_at=datetime.now(),
             sale_group_id=sale.sale_group_id,
             
             # Y añadimos el campo del objeto 'item'

@@ -18,3 +18,8 @@ class Inventory(Base):
     warehouse = relationship("Warehouse")
     item = relationship("Item")
     
+    @property
+    def updated_at_local(self):
+        from zoneinfo import ZoneInfo
+        from datetime import timezone
+        return self.updated_at.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("America/Managua"))

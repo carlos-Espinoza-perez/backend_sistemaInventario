@@ -14,3 +14,9 @@ class ItemMovementGroup(Base):
 
     user = relationship("User")
     warehouse = relationship("Warehouse")
+
+    @property
+    def created_at_local(self):
+        from zoneinfo import ZoneInfo
+        from datetime import timezone
+        return self.created_at.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("America/Managua"))

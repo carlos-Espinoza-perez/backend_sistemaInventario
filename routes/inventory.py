@@ -1,4 +1,6 @@
-from datetime import datetime
+from datetime import datetime, time, timedelta, timezone
+from typing import Dict, List
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import case, desc, func
 from sqlalchemy.orm import Session, joinedload, aliased
@@ -84,6 +86,8 @@ def get_inventory_grouped_warehouse(
             .order_by(Inventory.updated_at.desc())
             .first()
         )
+        if total_quantity == 0:
+            continue
 
         summary.append({
             "item_id": item_id,
@@ -115,6 +119,9 @@ def get_inventory_grouped(db: Session = Depends(get_db), current_user: User = De
     summary = []
     for item_id, warehouse_id, total_quantity, total_investment, inventory_id in results:
         item = db.query(Item).get(item_id)
+        if (total_quantity == 0):
+            continue
+        
         summary.append({
             "item_id": item_id,
             "item_name": item.name if item else None,
@@ -134,14 +141,141 @@ def get_inventory_summary(db: Session = Depends(get_db), current_user: User = De
     total_quantity = sum(inv.quantity for inv in inventories)
     total_investment = sum(inv.quantity * inv.purchase_price for inv in inventories)
 
-    sales = db.query(Sale).filter(Sale.paid == False).all()
-    total_debt = sum(sale.quantity * sale.sale_price for sale in sales)
+    salesNoPaid = db.query(Sale).filter(Sale.paid == False).all()
+    total_debt = sum(sale.quantity * sale.sale_price for sale in salesNoPaid)
+
+    # Filtrar un rango de 2 semanas
+    salesPaid = db.query(Sale).filter(Sale.paid == True).filter(Sale.created_at >= datetime.now() - timedelta(days=14)).all()
+    total_paid = sum(sale.quantity * sale.sale_price for sale in salesPaid)
 
     return {
         "total_items": total_quantity,
         "total_investment": round(total_investment, 2),
         "total_debt": round(total_debt, 2)
     }
+
+@router.get("/summary_sales")
+def get_summary_sales(
+    db: Session = Depends(get_db),
+    dateStart: datetime = datetime.now() - timedelta(days=29),
+    dateEnd: datetime = datetime.now(),
+    current_user: User = Depends(get_current_user)
+):
+    # Asumimos que dateStart y dateEnd vienen en zona local (America/Managua)
+    zona_local = ZoneInfo("America/Managua")
+
+    start_local = datetime.combine(dateStart.date(), time.min, tzinfo=zona_local)
+    end_local = datetime.combine(dateEnd.date(), time.max, tzinfo=zona_local)
+
+    # Convertir a UTC para filtrar en base de datos
+    start_utc = start_local.astimezone(timezone.utc)
+    end_utc = end_local.astimezone(timezone.utc)
+
+    salesPaid = (
+        db.query(Sale)
+        .join(Item)
+        .filter(Sale.paid == True)
+        .filter(func.date(Sale.created_at) >= start_utc.date())
+        .filter(func.date(Sale.created_at) <= end_utc.date())
+        .all()
+    )
+
+    total_paid = 0.0
+    total_profit = 0.0
+
+    for sale in salesPaid:
+        total_paid += sale.quantity * sale.sale_price
+
+        # Buscar el último precio de compra (entrada más reciente antes o igual a la venta)
+        last_movement = (
+            db.query(ItemMovement)
+            .filter(ItemMovement.item_id == sale.item_id)
+            .filter(ItemMovement.type == 'entrada')
+            .filter(ItemMovement.timestamp <= sale.created_at)
+            .order_by(desc(ItemMovement.timestamp))
+            .first()
+        )
+
+        if last_movement:
+            purchase_price = last_movement.purchase_price
+            profit = sale.quantity * (sale.sale_price - purchase_price)
+            total_profit += profit
+        else:
+            # No hay costo conocido, no sumamos ganancia
+            continue
+
+    return {
+        "total_paid": round(total_paid, 2),
+        "total_profit": round(total_profit, 2)
+    }
+
+
+@router.get("/summary_sales_by_day")
+def get_summary_sales_by_day(
+    db: Session = Depends(get_db),
+    dateStart: datetime = datetime.now() - timedelta(days=29),
+    dateEnd: datetime = datetime.now(),
+    current_user: User = Depends(get_current_user)
+) -> List[Dict]:
+    # Asumimos que dateStart y dateEnd vienen en zona local (America/Managua)
+    zona_local = ZoneInfo("America/Managua")
+
+    start_local = datetime.combine(dateStart.date(), time.min, tzinfo=zona_local)
+    end_local = datetime.combine(dateEnd.date(), time.max, tzinfo=zona_local)
+
+    # Convertir a UTC para filtrar en base de datos
+    start_utc = start_local.astimezone(timezone.utc)
+    end_utc = end_local.astimezone(timezone.utc)
+
+
+    # Traer TODAS las ventas dentro del rango
+    sales = (
+        db.query(Sale)
+        .join(ItemMovement, ItemMovement.item_id == Sale.item_id)
+        .filter(func.date(Sale.created_at) >= start_utc.date())
+        .filter(func.date(Sale.created_at) <= end_utc.date())
+        .all()
+    )
+
+    resumen_diario = {}
+
+    for sale in sales:
+        created_at = sale.created_at_local
+        fecha = created_at.date().isoformat()  # clave tipo "2025-07-16"
+
+        if fecha not in resumen_diario:
+            resumen_diario[fecha] = {
+                "fecha": created_at.date().strftime("%d/%m/%Y"),
+                "ventas": 0.0,
+                "ganancias": 0.0,
+                "fiados": 0.0,
+            }
+
+        monto_venta = sale.quantity * sale.sale_price
+        resumen_diario[fecha]["ventas"] += monto_venta
+
+        if sale.paid:
+            # Buscar el último precio de compra antes o igual a la venta
+            last_movement = (
+                db.query(ItemMovement)
+                .filter(ItemMovement.item_id == sale.item_id)
+                .filter(ItemMovement.type == 'entrada')
+                .filter(ItemMovement.timestamp <= sale.created_at)
+                .order_by(desc(ItemMovement.timestamp))
+                .first()
+            )
+
+            if last_movement:
+                compra = last_movement.purchase_price
+                ganancia = sale.quantity * (sale.sale_price - compra)
+                resumen_diario[fecha]["ganancias"] += ganancia
+        else:
+            resumen_diario[fecha]["fiados"] += monto_venta
+
+    # Ordenar por fecha ascendente y convertir a lista
+    resultado = [resumen_diario[fecha] for fecha in sorted(resumen_diario)]
+
+    return resultado
 
 @router.get("/warehouse/{warehouse_id}", response_model=list[InventoryOut])
 def get_inventory_warehouse_id(warehouse_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):

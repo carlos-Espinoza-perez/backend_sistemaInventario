@@ -16,3 +16,9 @@ class SaleGroup(Base):
     user = relationship("User")
     sales = relationship("Sale", back_populates="sale_group", cascade="all, delete")
     warehouse = relationship("Warehouse")
+
+    @property
+    def created_at_local(self):
+        from zoneinfo import ZoneInfo
+        from datetime import timezone
+        return self.created_at.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("America/Managua"))

@@ -14,3 +14,10 @@ class Item(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     category = relationship("Category", back_populates="items")
+
+    @property
+    def created_at_local(self):
+        from zoneinfo import ZoneInfo
+        from datetime import timezone
+        return self.created_at.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("America/Managua"))
+

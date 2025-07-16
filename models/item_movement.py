@@ -31,3 +31,9 @@ class ItemMovement(Base):
     source_warehouse = relationship("Warehouse", foreign_keys=[source_warehouse_id])
     target_warehouse = relationship("Warehouse", foreign_keys=[target_warehouse_id])
     user = relationship("User")
+
+    @property
+    def timestamp_local(self):
+        from zoneinfo import ZoneInfo
+        from datetime import timezone
+        return self.timestamp.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("America/Managua"))
