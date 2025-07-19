@@ -1,9 +1,9 @@
-# fly.toml app configuration file generated for sistemainventario on 2025-07-04T00:48:18Z
+# fly.toml app configuration file generated for backend-sistemainventario on 2025-07-19T02:00:19Z
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-app = 'sistemainventario'
+app = 'backend-sistemainventario'
 primary_region = 'mia'
 
 [build]
@@ -11,9 +11,9 @@ primary_region = 'mia'
 [http_service]
   internal_port = 8000
   force_https = true
-  auto_stop_machines = false
+  auto_stop_machines = 'stop'
   auto_start_machines = true
-  min_machines_running = 1
+  min_machines_running = 0
   processes = ['app']
 
 [[vm]]
