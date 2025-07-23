@@ -1,10 +1,12 @@
 from datetime import datetime, time, timedelta, timezone
 from typing import Dict, List
 from zoneinfo import ZoneInfo
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy import case, desc, func
 from sqlalchemy.orm import Session, joinedload, aliased
 from core.dependencies import get_current_user
+from core.limpiar_base_de_datos import limpiar_base_de_datos
+from core.load_file_inventory import importar_excel_inventario
 from db.database import SessionLocal
 from models.inventory import Inventory
 from models.item import Item
@@ -375,7 +377,13 @@ def rebuild_inventory_table(db: Session):
 def rebuild_inventory(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return rebuild_inventory_table(db)
 
+@router.post("/load-file")
+def load_file_inventory(file: UploadFile = File(...), warehouse_id: int = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return importar_excel_inventario(file.file, db, warehouse_id, current_user.id)
 
+@router.delete("/reset-inventory")
+def reset_inventory(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return limpiar_base_de_datos()    
 
 @router.get("/{inventory_id}", response_model=InventoryOut)
 def get_inventory_entry(inventory_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
