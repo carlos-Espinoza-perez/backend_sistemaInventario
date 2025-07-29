@@ -26,4 +26,4 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 
 @router.get("/me")
 def validate_token(current_user: User = Depends(get_current_user)):
-    return {"valid": True, "username": current_user.username}
+    return {"valid": True, "username": current_user.username, "fullname": current_user.full_name}

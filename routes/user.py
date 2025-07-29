@@ -49,6 +49,8 @@ def update_user(user_id: int, data: UserCreate, db: Session = Depends(get_db), c
         raise HTTPException(status_code=404, detail="User not found")
     for key, value in data.dict().items():
         setattr(user, key, value)
+
+    user.hashed_password = hash_password(data.password) if data.password else user.hashed_password
     db.commit()
     db.refresh(user)
     return user

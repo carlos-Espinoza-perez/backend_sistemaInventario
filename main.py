@@ -28,6 +28,7 @@ from routes.auth import router as auth_router
 from routes.sale_group import router as sale_group_router
 from routes.sale import router as sale_router
 from routes.item_movement_group import router as item_movement_group_router
+from routes.IA import router as IA_router
 
 app = FastAPI(
     title="Sistema de Inventario",
@@ -60,6 +61,7 @@ app.include_router(auth_router)
 app.include_router(sale_group_router)
 app.include_router(sale_router)
 app.include_router(item_movement_group_router)
+app.include_router(IA_router)
 
 @app.get("/")
 def root():
