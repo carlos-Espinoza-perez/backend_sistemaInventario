@@ -4,9 +4,8 @@ import os
 
 
 
-# DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./inventario.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./inventario.db")
 # DATABASE_URL = "postgresql://sistema_inventario_yoxd_user:HBnIV9scNE6bCZZJgdOHHk6GpN5P7udM@dpg-d1ivem6r433s73fkb0jg-a.oregon-postgres.render.com/sistema_inventario_yoxd"
-DATABASE_URL = "postgresql://postgres:Carlos2013:)@db.jeyvqmjzmcdsvrabsszz.supabase.co:5432/postgres"
 
 # Solo incluir `connect_args` si usas SQLite
 if DATABASE_URL.startswith("sqlite"):
