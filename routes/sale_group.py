@@ -137,7 +137,12 @@ def get_sale_groups_with_total_items(
         db.query(
             Sale.sale_group_id,
             func.sum(Sale.quantity).label("total_items"),
-            func.sum(Sale.quantity * Sale.sale_price).label("total_sale_price"),
+            func.sum(
+                case(
+                    (Sale.paid == True, Sale.quantity * Sale.sale_price),
+                    else_=0
+                )
+            ).label("total_sale_price"),
             
             func.sum(
                 case(

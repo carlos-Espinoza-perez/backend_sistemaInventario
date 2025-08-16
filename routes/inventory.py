@@ -57,48 +57,67 @@ def create_inventories_bulk(
 def get_inventory(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return db.query(Inventory).options(joinedload(Inventory.item)).all()
 
+from sqlalchemy.orm import aliased
+
 @router.get("/grouped/{warehouse_id}")
 def get_inventory_grouped_warehouse(
     warehouse_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    # Subconsulta para obtener el último registro de cada item_id en la bodega
+    subquery = (
+        db.query(
+            Inventory.item_id,
+            func.max(Inventory.updated_at).label("max_updated_at")
+        )
+        .filter(Inventory.warehouse_id == warehouse_id)
+        .group_by(Inventory.item_id)
+        .subquery()
+    )
+
+    LastInventory = aliased(Inventory)
+
+    # Consulta principal optimizada
     results = (
         db.query(
             Inventory.item_id,
             func.sum(Inventory.quantity).label("total_quantity"),
-            func.sum(Inventory.quantity * Inventory.purchase_price).label("total_investment")
+            func.sum(Inventory.quantity * Inventory.purchase_price).label("total_investment"),
+            Item.name.label("item_name"),
+            LastInventory.sale_price.label("last_sale_price"),
+            LastInventory.purchase_price.label("last_purchase_price")
         )
+        .join(Item, Item.id == Inventory.item_id)
+        .join(subquery,
+              (Inventory.item_id == subquery.c.item_id) &
+              (Inventory.updated_at == subquery.c.max_updated_at))
+        .join(LastInventory,
+              (LastInventory.item_id == subquery.c.item_id) &
+              (LastInventory.updated_at == subquery.c.max_updated_at))
         .filter(Inventory.warehouse_id == warehouse_id)
-        .group_by(Inventory.item_id)
+        .group_by(
+            Inventory.item_id,
+            Item.name,
+            LastInventory.sale_price,
+            LastInventory.purchase_price
+        )
+        .having(func.sum(Inventory.quantity) > 0)
         .all()
     )
 
-    summary = []
-    for item_id, total_quantity, total_investment in results:
-        item = db.query(Item).get(item_id)
-
-        # Obtener el último registro de inventario por item_id en esta bodega
-        last_inventory = (
-            db.query(Inventory)
-            .filter(
-                Inventory.item_id == item_id,
-                Inventory.warehouse_id == warehouse_id
-            )
-            .order_by(Inventory.updated_at.desc())
-            .first()
-        )
-        if total_quantity == 0:
-            continue
-
-        summary.append({
-            "item_id": item_id,
-            "item_name": item.name if item else None,
-            "total_quantity": total_quantity,
-            "total_investment": total_investment,
-            "last_sale_price": last_inventory.sale_price if last_inventory else None,
-            "last_purchase_price": last_inventory.purchase_price if last_inventory else None,
-        })
+    # Armar la respuesta
+    summary = [
+        {
+            "item_id": r.item_id,
+            "item_name": r.item_name,
+            "total_quantity": r.total_quantity,
+            "total_investment": r.total_investment,
+            "last_sale_price": r.last_sale_price,
+            "last_purchase_price": r.last_purchase_price,
+        }
+        for r in results
+    ]
 
     return summary
 
@@ -219,62 +238,71 @@ def get_summary_sales_by_day(
     dateEnd: datetime = datetime.now(),
     current_user: User = Depends(get_current_user)
 ) -> List[Dict]:
-    # Asumimos que dateStart y dateEnd vienen en zona local (America/Managua)
     zona_local = ZoneInfo("America/Managua")
+
+    # Asegurar zona horaria
+    if dateStart.tzinfo is None:
+        dateStart = dateStart.replace(tzinfo=zona_local)
+    if dateEnd.tzinfo is None:
+        dateEnd = dateEnd.replace(tzinfo=zona_local)
 
     start_local = datetime.combine(dateStart.date(), time.min, tzinfo=zona_local)
     end_local = datetime.combine(dateEnd.date(), time.max, tzinfo=zona_local)
 
-    # Convertir a UTC para filtrar en base de datos
+    # Convertir a UTC
     start_utc = start_local.astimezone(timezone.utc)
     end_utc = end_local.astimezone(timezone.utc)
 
-
-    # Traer TODAS las ventas dentro del rango
+    # Traer ventas dentro del rango
     sales = (
         db.query(Sale)
-        .join(ItemMovement, ItemMovement.item_id == Sale.item_id)
-        .filter(func.date(Sale.created_at) >= start_utc.date())
-        .filter(func.date(Sale.created_at) <= end_utc.date())
+        .filter(Sale.created_at >= start_utc)
+        .filter(Sale.created_at <= end_utc)
         .all()
     )
 
-    resumen_diario = {}
+    # Traer últimos movimientos de entrada por item_id antes del end_utc
+    movimientos = (
+        db.query(ItemMovement)
+        .filter(ItemMovement.type == "entrada")
+        .filter(ItemMovement.timestamp <= end_utc)
+        .order_by(ItemMovement.item_id, desc(ItemMovement.timestamp))
+        .all()
+    )
+
+    movimientos_por_item = {}
+    for mov in movimientos:
+        if mov.item_id not in movimientos_por_item:
+            movimientos_por_item[mov.item_id] = mov  # último movimiento por item
+
+    # Construir resumen diario
+    resumen_diario: Dict[str, Dict] = {}
 
     for sale in sales:
-        created_at = sale.created_at_local
-        fecha = created_at.date().isoformat()  # clave tipo "2025-07-16"
+        created_at_local = sale.created_at.astimezone(zona_local)
+        fecha_str = created_at_local.date().isoformat()
 
-        if fecha not in resumen_diario:
-            resumen_diario[fecha] = {
-                "fecha": created_at.date().strftime("%d/%m/%Y"),
+        if fecha_str not in resumen_diario:
+            resumen_diario[fecha_str] = {
+                "fecha": created_at_local.strftime("%d/%m/%Y"),
                 "ventas": 0.0,
                 "ganancias": 0.0,
                 "fiados": 0.0,
             }
 
         monto_venta = sale.quantity * sale.sale_price
-        resumen_diario[fecha]["ventas"] += monto_venta
+        resumen_diario[fecha_str]["ventas"] += monto_venta
 
         if sale.paid:
-            # Buscar el último precio de compra antes o igual a la venta
-            last_movement = (
-                db.query(ItemMovement)
-                .filter(ItemMovement.item_id == sale.item_id)
-                .filter(ItemMovement.type == 'entrada')
-                .filter(ItemMovement.timestamp <= sale.created_at)
-                .order_by(desc(ItemMovement.timestamp))
-                .first()
-            )
-
-            if last_movement:
-                compra = last_movement.purchase_price
+            last_mov = movimientos_por_item.get(sale.item_id)
+            if last_mov:
+                compra = last_mov.purchase_price
                 ganancia = sale.quantity * (sale.sale_price - compra)
-                resumen_diario[fecha]["ganancias"] += ganancia
+                resumen_diario[fecha_str]["ganancias"] += ganancia
         else:
-            resumen_diario[fecha]["fiados"] += monto_venta
+            resumen_diario[fecha_str]["fiados"] += monto_venta
 
-    # Ordenar por fecha ascendente y convertir a lista
+    # Convertir dict a lista ordenada por fecha ascendente
     resultado = [resumen_diario[fecha] for fecha in sorted(resumen_diario)]
 
     return resultado
@@ -373,6 +401,8 @@ def rebuild_inventory_table(db: Session):
 
     db.commit()
     return {"status": "Inventory table rebuilt successfully"}
+
+
 @router.post("/rebuild-inventory")
 def rebuild_inventory(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return rebuild_inventory_table(db)
