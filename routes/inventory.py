@@ -182,13 +182,19 @@ def get_summary_sales(
     dateEnd: datetime = datetime.now(),
     current_user: User = Depends(get_current_user)
 ):
-    # Asumimos que dateStart y dateEnd vienen en zona local (America/Managua)
     zona_local = ZoneInfo("America/Managua")
 
+    # Asegurar que dateStart y dateEnd tienen tzinfo correcto
+    if dateStart.tzinfo is None:
+        dateStart = dateStart.replace(tzinfo=zona_local)
+    if dateEnd.tzinfo is None:
+        dateEnd = dateEnd.replace(tzinfo=zona_local)
+
+    # Llevarlos a inicio y fin del día en UTC-6
     start_local = datetime.combine(dateStart.date(), time.min, tzinfo=zona_local)
     end_local = datetime.combine(dateEnd.date(), time.max, tzinfo=zona_local)
 
-    # Convertir a UTC para filtrar en base de datos
+    # Convertir a UTC (para comparar con base de datos)
     start_utc = start_local.astimezone(timezone.utc)
     end_utc = end_local.astimezone(timezone.utc)
 
@@ -196,8 +202,8 @@ def get_summary_sales(
         db.query(Sale)
         .join(Item)
         .filter(Sale.paid == True)
-        .filter(func.date(Sale.created_at) >= start_utc.date())
-        .filter(func.date(Sale.created_at) <= end_utc.date())
+        .filter(Sale.created_at >= start_utc)
+        .filter(Sale.created_at <= end_utc)
         .all()
     )
 

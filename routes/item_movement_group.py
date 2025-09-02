@@ -10,6 +10,9 @@ from schemas.sale_group import SaleGroupCreate, SaleGroupOut
 from core.dependencies import get_current_user
 from models.user import User
 
+from datetime import timezone
+from zoneinfo import ZoneInfo
+
 router = APIRouter(prefix="/item-movement-groups", tags=["Item Movement Groups"])
 
 def get_db():
@@ -18,6 +21,7 @@ def get_db():
         yield db
     finally:
         db.close()
+
 
 
 
@@ -46,13 +50,15 @@ def get_item_movement_groups_with_total_items(
         .all()
     )
 
+    zona_local = ZoneInfo("America/Managua")
+
     return [
         ItemMovementGroupWithSummary(
             id=group.id,
             warehouse_id=group.warehouse_id,
             note=group.note,
             user_id=group.user_id,
-            created_at=group.created_at,
+            created_at=group.created_at.replace(tzinfo=timezone.utc).astimezone(zona_local),
             total_items=total_items,
         )
         for group, total_items in results
