@@ -9,6 +9,7 @@ from core.security import hash_password
 from db.database import engine, Base, SessionLocal
 from models.user import User
 
+
 from db.create_tables import Base, engine
 from models import *
 
@@ -107,4 +108,4 @@ def init(db: Session = Depends(get_db)):
     return {"message": "Base de datos creada"}
 
 
-# uvicorn main:app --ssl-keyfile=key.pem --ssl-certfile=cert.pem
+# uvicorn main:app --ssl-keyfile=localhost-key.pem --ssl-certfile=localhost.pem

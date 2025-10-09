@@ -14,6 +14,7 @@ from models.item_movement import ItemMovement
 from models.sale import Sale
 from models.user import User
 from schemas.inventory import InventoryBulkCreate, InventoryCreate, InventoryOut
+from sqlalchemy.orm import aliased
 
 router = APIRouter(prefix="/inventory", tags=["Inventory"])
 
@@ -57,7 +58,6 @@ def create_inventories_bulk(
 def get_inventory(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     return db.query(Inventory).options(joinedload(Inventory.item)).all()
 
-from sqlalchemy.orm import aliased
 
 @router.get("/grouped/{warehouse_id}")
 def get_inventory_grouped_warehouse(
